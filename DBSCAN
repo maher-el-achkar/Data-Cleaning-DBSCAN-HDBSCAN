@@ -1,0 +1,270 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Apr  3 10:23:41 2024
+
+@author: Maher El Achkar
+"""
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+from sklearn.cluster import DBSCAN
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+from sklearn.preprocessing import normalize
+from sklearn.metrics import silhouette_score
+from sklearn.decomposition import PCA
+from sklearn.compose import ColumnTransformer
+import psycopg2
+#############################################################################
+### DBSCAN (Density-Based Spatial Clustering of Applications with Noise).
+#DBSCAN is particularly useful for outlier detection because it doesn't assume
+# that clusters have a spherical shape or that the data is evenly distributed. 
+#Instead, it identifies clusters based on regions of high density separated by 
+#regions of low density. Points that are not within 
+#any dense region are considered outliers
+#############################################################################
+############################## CONNECTION ###################################
+# Establish a connection to the database
+conn = psycopg2.connect(
+    host='***.***.***.***',
+    port='****',
+    database='***',
+    user='support-sql',
+    password='*******'
+)
+#############################################################################
+
+
+############################### FETCHING AND TREATING ########################
+### SQL query to fetch data from the database
+"""
+sql_query = 
+    "select * from (
+		select 
+		"flow" , "SOG", "power", "torque", "rpm" ,torq."time",
+        "flow"/"power" as "SFC", "flow"/"SOG" as "LNM", 
+        torq."instrumentId" , torq."shipId"
+		from (select "time", "rpm", "power", "torque","instrumentId","shipId"
+			from public."torqueMeter" 
+				where "time" between ******* and ******** 
+						and	"instrumentId" = *** 
+						and "power" > 0
+						and rpm > 0 
+						--and "shipId" = shipid 
+						and "operationModeId" in (select * from public.get_op_mode_transit())
+						--and "torqueMeter"."isRegimePermanent"
+						) as torq 
+			inner join (
+					select "time", "flowMeter"."flow" 
+					from public."flowMeter"
+					where 
+						/*"flowMeter"."shipId" = shipid
+						and */
+						"time" between ******* and ******** 
+						and "operationModeId" in (select * from public.get_op_mode_transit()) 
+						and "instrumentId" = ***
+						and "flow" > 0
+						) as fl on torq."time" = fl."time"
+			inner join (
+					select "time","SOG" from public."GPS" 
+					where 
+					/*
+					"shipId" = shipid 
+					and */
+					"time" between ******* and ******* 
+					and "operationModeId" in (select * from public.get_op_mode_transit())
+					and "instrumentId" = *** 
+					and "SOG" > 0
+					) as gps on torq."time" = gps."time" ) as al"
+"""
+#############################################################################
+
+#################### Fetching data into pandas' DataFrame ###################
+
+#X_test = pd.read_sql(sql_query, conn)
+
+#############################################################################
+###################### Using Local test Data instead ########################
+
+X_test = pd.read_csv("../testData.csv")
+
+###################################################
+#######     Dropping irrelevant Columns     #######
+
+#X_test = X_test.drop(['ChosenAttribute'], axis=1)
+
+####################################################
+#######        Filling up Data NAN           #######
+
+X_test.ffill(inplace=True)
+
+#############################################################################
+
+############################ Using Local Training Data ######################
+
+X_train = pd.read_csv("../trainingData.csv")
+
+###################################################
+#######     Dropping irrelevant Columns     #######
+
+#X_test = X_test.drop(['ChosenAttribute'], axis=1)
+
+####################################################
+#######        Filling up Data NAN           #######
+
+X_train.ffill(inplace=True)
+
+
+#############################################################################
+#################### Scaling and normalizing Trainig Data ###################
+
+#######       Initialize scalers             #######
+
+#scaler = StandardScaler()
+
+#####################################################
+#######   In case of emphasis on features    #######
+
+### Standard Scaler
+zscore_scaler = StandardScaler()
+
+### Minmax Scaler
+# Apply Min-Max scaling to the selected features ...
+# we want to emphasize and Adjust the range as needed
+minmax_scaler = MinMaxScaler(feature_range=(0, 1)) 
+
+#####################################################
+#######        Define features to Scale       #######
+
+zscore_features = ['time']
+emphasized_features=['LNM']#SFC,''
+
+######################################################
+#######        Define the transformers         #######
+
+# Define the transformers for different feature groups
+transformers = [
+    ('zscore', zscore_scaler, zscore_features),
+    ('minmax', minmax_scaler, emphasized_features)
+]
+
+######################################################
+#######          Transforme and Fit            #######
+
+# ColumnTransformer
+preprocessor = ColumnTransformer(transformers)
+
+# fitting scaler
+X_train_scaled = preprocessor.fit_transform(X_train)
+
+#######################################################
+#############################################################################
+
+################### Clustering and Labeling Trainig Data ######################
+####### Clustering transformed and scaled DATA #######
+
+# Perform DBSCAN clustering on the scaled dataset
+dbscan_model = DBSCAN(eps=0.0021, min_samples=463)
+
+# Extracting the labels (Accepted vs Rejected Points)
+labels_train = dbscan_model.fit_predict(X_train_scaled)
+
+#######################################################
+###############################################################################
+# Read me:
+'''
+When scaling test data, you should use the transform method instead 
+of fit_transform for the following reasons:
++ Consistency: Using transform ensures that the scaling is applied consistently
+  with the parameters learned from the training data.
+  Since the scaling parameters (e.g., mean and standard deviation 
+                              for Z-score normalization, minimum and maximum 
+                              values for Min-Max scaling) 
+  are already learned during the fitting stage with the training data,
+  you want to apply the same transformation to the test data.
+
++ Prevents Data Leakage: Using fit_transform on the test data would imply 
+  that you're re-learning the scaling parameters from the test data itself.
+  This would lead to data leakage, where information from the test set is used 
+  during the training process, potentially biasing the model evaluation.
++ Reflects Real-World Scenario:In real-world scenarios,when deploying a machine
+  learning model, you won't have access to the future data during training.
+  Therefore, you should mimic this scenario by only applying transformations
+  learned from the training data to the test data.
+
+By using transform instead of fit_transform,you ensure that the scaling process
+is consistent and follows best practices for model evaluation and generalization.
+'''
+###############################################################################
+
+#################### Scaling and normalizing TEST Data ########################
+
+#X_test_scaled = scaler.transform(X_test)
+X_test_scaled = preprocessor.transform(X_test)
+#normalized
+X_test_norm = pd.DataFrame(normalize(X_test_scaled))
+###############################################################################
+
+##################### Clustering and Labeling TEST Data #######################
+
+# Apply the trained DBSCAN model to the test data using the same trained model 
+labels_test = dbscan_model.fit_predict(X_test_norm)
+
+###############################################################################
+####################### Counting Resulting Labels #############################
+
+# Anomalous points are labeled as -1
+# Normal points have labels other than -1
+
+anomaly_count = np.sum(labels_test == -1)  
+normal_count = np.sum(labels_test != -1)   
+print(f'Normal points: {normal_count}')
+print(f'Anomalous points: {anomaly_count}')
+
+###############################################################################
+###################### Gathering Corresponding Indices ########################
+
+anomaly_indices=[index for index,label in enumerate(labels_test) if label==-1]
+anomaly_times = X_test['time'].iloc[anomaly_indices]
+#print("Anomaly indices:", anomaly_indices)
+#print(" anomaly_times:", anomaly_times)
+
+###############################################################################
+############################### UPDATING DATABASE #############################
+# Create a cursor object
+cur = conn.cursor()
+
+# Example update query
+update_query = """
+    update "torqueMeter" set  "isRegimePermanent" = false  
+    WHERE
+       "shipId" = theChosenShipId
+		and	"instrumentId" = theChoseninstrumentId  
+        and "time" IN %s;
+"""
+
+try:
+    ### Execute the update query with anomaly IDs
+    cur.execute(update_query, (tuple(anomaly_times),))
+    
+    # Get the number of rows affected
+    rows_affected = cur.rowcount
+    print(f"Number of rows affected: {rows_affected}")
+   
+    # Commit the transaction
+    conn.commit()
+    print("Update successful!")
+
+except Exception as e:
+    # Rollback the transaction if an error occurs
+    conn.rollback()
+    print("Error:", e)
+
+finally:
+    # Close the cursor and connection
+    cur.close()
+    conn.close()
+###############################################################################
+##################################   +++   ####################################
