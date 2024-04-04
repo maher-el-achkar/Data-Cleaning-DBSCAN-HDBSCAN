@@ -1,0 +1,23 @@
+Ce code effectue plusieurs tâches liées à l'analyse de données, au regroupement et aux opérations de base de données. Voici une explication simplifiée :
+
+Imports : Il importe diverses bibliothèques Python telles que NumPy, Pandas, Matplotlib et scikit-learn, qui sont utilisées pour le calcul numérique, la manipulation de données, la visualisation et les tâches d'apprentissage automatique.
+
+Connexion à la base de données : Il établit une connexion à une base de données PostgreSQL en utilisant la bibliothèque psycopg2. Cela permet au code de récupérer des données de la base de données ou de les mettre à jour.
+
+Récupération des données : Il récupère des données de la base de données ou les lit à partir de fichiers CSV locaux (trainingData.csv et testData.csv) dans des DataFrames Pandas. Ces DataFrames sont essentiellement des tables de données qui peuvent être manipulées et analysées.
+
+Prétraitement des données : Il effectue diverses étapes de prétraitement sur les données, telles que la suppression des colonnes non pertinentes, le remplissage des valeurs manquantes (NaN) et la mise à l'échelle / normalisation des données. La mise à l'échelle et la normalisation garantissent que toutes les caractéristiques ont la même échelle, ce qui est important pour que de nombreux algorithmes d'apprentissage automatique fonctionnent efficacement.
+
+Regroupement : Il utilise l'algorithme DBSCAN de scikit-learn pour effectuer un regroupement sur les données d'entraînement. Le regroupement est une technique d'apprentissage automatique utilisée pour regrouper ensemble des points de données similaires. DBSCAN est particulièrement utile pour la détection d'anomalies, car il identifie des clusters basés sur des régions de haute densité séparées par des régions de faible densité.
+
+Étiquetage : Il attribue des étiquettes aux points de données en fonction des résultats du regroupement. Les points anormaux sont étiquetés -1, tandis que les points normaux ont d'autres étiquettes.
+
+Comptage des étiquettes résultantes : Il compte le nombre de points normaux et anormaux dans les données de test.
+
+Collecte des indices correspondants : Il collecte les indices des points anormaux dans les données de test.
+
+Mise à jour de la base de données : Il met à jour la base de données en exécutant une requête SQL de mise à jour. Il met à jour la colonne "isRegimePermanent" dans la table "torqueMeter" en fonction des temps anormaux trouvés dans les données de test.
+
+Gestion des erreurs et fermeture des connexions : Il gère les erreurs qui peuvent survenir lors des opérations sur la base de données et ferme le curseur et la connexion à la base de données.
+
+Dans l'ensemble, ce code effectue une analyse de données, une détection d'anomalies et des opérations de base de données sur l'ensemble de données donné.
