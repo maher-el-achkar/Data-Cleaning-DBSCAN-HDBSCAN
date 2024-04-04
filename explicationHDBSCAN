@@ -1,0 +1,25 @@
+Ce code effectue plusieurs tâches liées à l'analyse de données, à la réduction de dimensionnalité, au regroupement et aux opérations de base de données. Voici une explication simplifiée :
+
+Imports : Il importe diverses bibliothèques Python telles que NumPy, Pandas, hdbscan, scikit-learn et psycopg2, qui sont utilisées pour le calcul numérique, la manipulation de données, le clustering et les opérations sur la base de données.
+
+Connexion à la base de données : Il établit une connexion à une base de données PostgreSQL en utilisant la bibliothèque psycopg2.
+
+Récupération des données : Il lit des données à partir de fichiers CSV locaux (trainingData.csv et testData.csv) dans des DataFrames Pandas.
+
+Prétraitement des données : Il effectue diverses étapes de prétraitement sur les données, telles que la suppression des colonnes non pertinentes et le remplissage des valeurs manquantes.
+
+Mise à l'échelle et normalisation : Il met à l'échelle et normalise les données d'entraînement.
+
+Réduction de dimensionnalité : Il utilise l'analyse en composantes principales (PCA) pour réduire la dimensionnalité des données à des fins de visualisation.
+
+Clustering avec HDBSCAN : Il utilise l'algorithme HDBSCAN pour effectuer le clustering sur les données d'entraînement.
+
+Étiquetage : Il attribue des étiquettes aux points de données en fonction des résultats du clustering.
+
+Comptage des étiquettes résultantes : Il compte le nombre de points normaux et anormaux dans les données de test.
+
+Gestion des anomalies : Il récupère les indices des points anormaux dans les données de test.
+
+Mise à jour de la base de données : Il met à jour la base de données en exécutant une requête SQL de mise à jour.
+
+Dans l'ensemble, ce code effectue une analyse de données, une réduction de dimensionnalité, un clustering et des opérations sur la base de données sur l'ensemble de données donné.
