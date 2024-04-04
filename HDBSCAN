@@ -1,0 +1,211 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Apr  4 15:14:30 2024
+
+@author: maher El Achkar
+"""
+import numpy as np
+import pandas as pd
+from sklearn.preprocessing import normalize
+from sklearn.decomposition import PCA
+import psycopg2
+import hdbscan
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
+#############################################################################
+### DBSCAN (Density-Based Spatial Clustering of Applications with Noise).
+#DBSCAN is particularly useful for outlier detection because it doesn't assume
+# that clusters have a spherical shape or that the data is evenly distributed. 
+#Instead, it identifies clusters based on regions of high density separated by 
+#regions of low density. Points that are not within 
+#any dense region are considered outliers
+#############################################################################
+
+# Establish a connection to the database
+conn = psycopg2.connect(
+    host='***.***.***.***',
+    port='****',
+    database='***',
+    user='support-sql',
+    password='*******'
+)
+
+
+############################### FETCHING AND TREATING ########################
+### SQL query to fetch data from the database
+"""
+sql_query = 
+    "select * from (
+		select 
+		"flow" , "SOG", "power", "torque", "rpm" ,torq."time",
+        "flow"/"power" as "SFC", "flow"/"SOG" as "LNM", 
+        torq."instrumentId" , torq."shipId"
+		from (select "time", "rpm", "power", "torque","instrumentId","shipId"
+			from public."torqueMeter" 
+				where "time" between *** and *** 
+						and	"instrumentId" = *** 
+						and "power" > 0
+						and rpm > 0 
+						--and "shipId" = shipid 
+						and "operationModeId" in (select * from public.get_op_mode_transit())
+						--and "torqueMeter"."isRegimePermanent"
+						) as torq 
+			inner join (
+					select "time", "flowMeter"."flow" 
+					from public."flowMeter"
+					where 
+						/*"flowMeter"."shipId" = shipid
+						and */
+						"time" between *** and *** 
+						and "operationModeId" in (select * from public.get_op_mode_transit()) 
+						and "instrumentId" = ***
+						and "flow" > 0
+						) as fl on torq."time" = fl."time"
+			inner join (
+					select "time","SOG" from public."GPS" 
+					where 
+					/*
+					"shipId" = shipid 
+					and */
+					"time" between *** and *** 
+					and "operationModeId" in (select * from public.get_op_mode_transit())
+					and "instrumentId" = *** 
+					and "SOG" > 0
+					) as gps on torq."time" = gps."time" ) as al"
+"""
+#############################################################################
+
+#################### Fetching data into pandas' DataFrame ###################
+
+#X_test = pd.read_sql(sql_query, conn)
+
+#############################################################################
+############################ Using Local Training Data ######################
+
+X_train = pd.read_csv("../trainingData.csv")
+
+###################################################
+#######     Dropping irrelevant Columns     #######
+
+#X_test = X_test.drop(['ChosenAttribute'], axis=1)
+
+####################################################
+#######        Filling up Data NAN           #######
+
+X_train.ffill(inplace=True)
+
+
+#############################################################################
+###################### Using Local test Data instead ########################
+
+X_test = pd.read_csv("../testData.csv")
+
+###################################################
+#######     Dropping irrelevant Columns     #######
+
+#X_test = X_test.drop(['ChosenAttribute'], axis=1)
+
+####################################################
+#######        Filling up Data NAN           #######
+
+X_test.ffill(inplace=True)
+
+#############################################################################
+# Scale and normalize
+# Initialize scalers
+
+scaler = StandardScaler()
+
+X_train_scaled = scaler.fit_transform(X_train)
+
+#########################           HDBSCAN         ##########################
+# Perform HDBSCAN clustering on the scaled dataset
+min_cluster_size = 749
+# Adjust this parameter as needed
+hdbscan_model = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size)
+labels_train = hdbscan_model.fit_predict(X_train_scaled)
+
+##############################################################################
+#################### Scaling and normalizing TEST Data #######################
+
+X_test_scaled = scaler.transform(X_test)
+# normalized
+X_test_norm = pd.DataFrame(normalize(X_test_scaled))
+#print("X_test_scaled: ", X_test_scaled)
+#print("X_test_norm: ", X_test_norm)
+##############################################################################
+
+# For the sake of visualization, efficiency, and simplicity,
+# we perform dimensionality reduction to reduce the 17 columns to 2.
+# Principal component analysis (PCA):Linear dimensionality reduction
+# using Singular Value Decomposition of the data to project it
+# to a lower-dimentional space.
+pca = PCA(n_components=None)#'mle' (maximum likelihood estimation)
+# Fit PCA on training data
+pca.fit(X_train_scaled)
+#X_train_pca = pca.transform(X_train_scaled)
+X_test_pca = pca.transform(X_test_scaled)
+#X_principal = pca.transform(X_test_norm)
+#X_principal = pd.DataFrame(X_principal)
+##############################################################################
+##################### Clustering and Labeling TEST Data ######################
+
+###################    HDBSCAN   #################
+# Apply the trained HDBSCAN model to the test data
+labels_test = hdbscan_model.fit_predict(X_test_pca)
+print("labels_test:", labels_test)
+
+###############################################################################
+####################### Counting Resulting Labels #############################
+# Anomalous points are labeled as -1
+# Normal points have labels other than -1
+anomaly_count = np.sum(labels_test == -1) 
+normal_count = np.sum(labels_test != -1)   
+
+print(f'Normal points: {normal_count}')
+print(f'Anomalous points: {anomaly_count}')
+
+###############################################################################
+###################### Gathering Corresponding Indices ########################
+
+anomaly_indices=[index for index, label in enumerate(labels_test) if label==-1]
+anomaly_times = X_test['time'].iloc[anomaly_indices]
+#print("Anomaly indices:", anomaly_indices)
+#print(" anomaly_times:", anomaly_times)
+
+############################### UPDATING DATABASE ############################
+# Create a cursor object
+cur = conn.cursor()
+
+# Example update query
+update_query = """
+    update "torqueMeter" set  "isRegimePermanent" = false  
+    WHERE
+       "shipId" = ***
+		and	"instrumentId" = ***  
+        and "time" IN %s;
+"""
+
+try:
+    ### Execute the update query
+    #cur.execute(update_query)
+    # Execute the update query with anomaly IDs
+    cur.execute(update_query, (tuple(anomaly_times),))
+    # Get the number of rows affected
+    rows_affected = cur.rowcount
+    print(f"Number of rows affected: {rows_affected}")
+   
+    # Commit the transaction
+    conn.commit()
+    print("Update successful!")
+
+except Exception as e:
+    # Rollback the transaction if an error occurs
+    conn.rollback()
+    print("Error:", e)
+
+finally:
+    # Close the cursor and connection
+    cur.close()
+    conn.close()
+###############################################################################
+##################################   +++   ####################################
